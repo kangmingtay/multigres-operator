@@ -693,6 +693,84 @@ func TestResolver_ResolveGlobalTopo(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		"Inline placement": {
+			cluster: &multigresv1alpha1.MultigresCluster{
+				Spec: multigresv1alpha1.MultigresClusterSpec{
+					GlobalTopoServer: &multigresv1alpha1.GlobalTopoServerSpec{
+						Etcd: &multigresv1alpha1.EtcdSpec{Image: "inline"},
+						Placement: &multigresv1alpha1.PodPlacementSpec{
+							Tolerations: []corev1.Toleration{
+								{
+									Key:      "workload",
+									Operator: corev1.TolerationOpEqual,
+									Value:    "customer-pg",
+									Effect:   corev1.TaintEffectNoSchedule,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &multigresv1alpha1.GlobalTopoServerSpec{
+				Etcd: &multigresv1alpha1.EtcdSpec{
+					Image:     "inline",
+					Replicas:  ptr.To(DefaultEtcdReplicas),
+					RootPath:  DefaultTopoRootPath,
+					Resources: DefaultResourcesEtcd(),
+					Storage:   multigresv1alpha1.StorageSpec{Size: DefaultEtcdStorageSize},
+				},
+				Placement: &multigresv1alpha1.PodPlacementSpec{
+					Tolerations: []corev1.Toleration{
+						{
+							Key:      "workload",
+							Operator: corev1.TolerationOpEqual,
+							Value:    "customer-pg",
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+					},
+				},
+			},
+		},
+		"Template placement with inline clear": {
+			cluster: &multigresv1alpha1.MultigresCluster{
+				Spec: multigresv1alpha1.MultigresClusterSpec{
+					GlobalTopoServer: &multigresv1alpha1.GlobalTopoServerSpec{
+						TemplateRef: "with-placement",
+						Placement:   &multigresv1alpha1.PodPlacementSpec{},
+					},
+				},
+			},
+			objects: []client.Object{
+				&multigresv1alpha1.CoreTemplate{
+					ObjectMeta: metav1.ObjectMeta{Name: "with-placement", Namespace: "default"},
+					Spec: multigresv1alpha1.CoreTemplateSpec{
+						GlobalTopoServer: &multigresv1alpha1.TopoServerSpec{
+							Etcd: &multigresv1alpha1.EtcdSpec{},
+							Placement: &multigresv1alpha1.PodPlacementSpec{
+								Tolerations: []corev1.Toleration{
+									{
+										Key:      "workload",
+										Operator: corev1.TolerationOpEqual,
+										Value:    "customer-pg",
+										Effect:   corev1.TaintEffectNoSchedule,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &multigresv1alpha1.GlobalTopoServerSpec{
+				Etcd: &multigresv1alpha1.EtcdSpec{
+					Image:     DefaultEtcdImage,
+					Replicas:  ptr.To(DefaultEtcdReplicas),
+					RootPath:  DefaultTopoRootPath,
+					Resources: DefaultResourcesEtcd(),
+					Storage:   multigresv1alpha1.StorageSpec{Size: DefaultEtcdStorageSize},
+				},
+				Placement: &multigresv1alpha1.PodPlacementSpec{},
+			},
+		},
 		"External Spec": {
 			cluster: &multigresv1alpha1.MultigresCluster{
 				Spec: multigresv1alpha1.MultigresClusterSpec{

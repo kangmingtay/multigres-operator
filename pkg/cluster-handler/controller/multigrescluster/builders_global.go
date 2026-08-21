@@ -78,6 +78,7 @@ func BuildGlobalTopoServer(
 				RootPath:  spec.Etcd.RootPath,
 			},
 			PVCDeletionPolicy: finalPolicy,
+			Placement:         spec.Placement,
 		},
 	}
 

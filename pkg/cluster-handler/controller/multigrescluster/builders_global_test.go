@@ -59,6 +59,30 @@ func TestBuildGlobalTopoServer(t *testing.T) {
 		}
 	})
 
+	t.Run("Etcd Enabled with placement", func(t *testing.T) {
+		spec := &multigresv1alpha1.GlobalTopoServerSpec{
+			Etcd: &multigresv1alpha1.EtcdSpec{Image: "etcd:latest"},
+			Placement: &multigresv1alpha1.PodPlacementSpec{
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "workload",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "customer-pg",
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+			},
+		}
+
+		got, err := BuildGlobalTopoServer(cluster, spec, scheme)
+		if err != nil {
+			t.Fatalf("BuildGlobalTopoServer() error = %v", err)
+		}
+		if diff := cmp.Diff(spec.Placement, got.Spec.Placement); diff != "" {
+			t.Errorf("Placement diff (-want +got):\n%s", diff)
+		}
+	})
+
 	t.Run("Etcd Disabled (External)", func(t *testing.T) {
 		spec := &multigresv1alpha1.GlobalTopoServerSpec{
 			Etcd: nil, // Simulating external mode where Etcd spec is nil

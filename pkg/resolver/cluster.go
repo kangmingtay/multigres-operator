@@ -204,6 +204,7 @@ func (r *Resolver) ResolveGlobalTopo(
 		finalSpec = &multigresv1alpha1.GlobalTopoServerSpec{
 			Etcd:              coreTemplate.Spec.GlobalTopoServer.Etcd.DeepCopy(),
 			PVCDeletionPolicy: coreTemplate.Spec.GlobalTopoServer.PVCDeletionPolicy,
+			Placement:         coreTemplate.Spec.GlobalTopoServer.Placement.DeepCopy(),
 		}
 	} else {
 		finalSpec = &multigresv1alpha1.GlobalTopoServerSpec{
@@ -233,6 +234,10 @@ func (r *Resolver) ResolveGlobalTopo(
 	// Merge GlobalTopoServerSpec-level PVCDeletionPolicy
 	if spec != nil && spec.PVCDeletionPolicy != nil {
 		finalSpec.PVCDeletionPolicy = spec.PVCDeletionPolicy
+	}
+
+	if spec != nil {
+		mergePodPlacementSpec(&finalSpec.Placement, spec.Placement)
 	}
 
 	return finalSpec, nil

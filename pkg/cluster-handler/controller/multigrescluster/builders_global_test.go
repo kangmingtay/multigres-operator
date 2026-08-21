@@ -109,7 +109,7 @@ func TestBuildMultiadminDeployment(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		got, err := BuildMultiadminDeployment(cluster, spec, scheme)
+		got, err := BuildMultiadminDeployment(cluster, spec, nil, scheme)
 		if err != nil {
 			t.Fatalf("BuildMultiadminDeployment() error = %v", err)
 		}
@@ -164,7 +164,7 @@ func TestBuildMultiadminDeployment(t *testing.T) {
 				Key:  "sampling-config.yaml",
 			},
 		}
-		got, err := BuildMultiadminDeployment(obsCluster, spec, scheme)
+		got, err := BuildMultiadminDeployment(obsCluster, spec, nil, scheme)
 		if err != nil {
 			t.Fatalf("BuildMultiadminDeployment() error = %v", err)
 		}
@@ -183,7 +183,7 @@ func TestBuildMultiadminDeployment(t *testing.T) {
 			t.Fatalf("test requires empty CertCommonName, got %q", tlsCluster.Spec.CertCommonName)
 		}
 
-		got, err := BuildMultiadminDeployment(tlsCluster, spec, scheme)
+		got, err := BuildMultiadminDeployment(tlsCluster, spec, nil, scheme)
 		if err != nil {
 			t.Fatalf("BuildMultiadminDeployment() error = %v", err)
 		}
@@ -263,7 +263,7 @@ func TestBuildMultiadminDeployment(t *testing.T) {
 		t.Run("No internal mTLS when "+name, func(t *testing.T) {
 			disabledCluster := cluster.DeepCopy()
 			mutateCluster(disabledCluster)
-			got, err := BuildMultiadminDeployment(disabledCluster, spec, scheme)
+			got, err := BuildMultiadminDeployment(disabledCluster, spec, nil, scheme)
 			if err != nil {
 				t.Fatalf("BuildMultiadminDeployment() error = %v", err)
 			}
@@ -298,9 +298,39 @@ func TestBuildMultiadminDeployment(t *testing.T) {
 		})
 	}
 
+	t.Run("Success with tolerations", func(t *testing.T) {
+		placement := &multigresv1alpha1.PodPlacementSpec{
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "workload",
+					Operator: corev1.TolerationOpEqual,
+					Value:    "customer-pg",
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+		}
+		got, err := BuildMultiadminDeployment(cluster, spec, placement, scheme)
+		if err != nil {
+			t.Fatalf("BuildMultiadminDeployment() error = %v", err)
+		}
+		if diff := cmp.Diff(placement.Tolerations, got.Spec.Template.Spec.Tolerations); diff != "" {
+			t.Errorf("Tolerations diff (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("Success with nil placement", func(t *testing.T) {
+		got, err := BuildMultiadminDeployment(cluster, spec, nil, scheme)
+		if err != nil {
+			t.Fatalf("BuildMultiadminDeployment() error = %v", err)
+		}
+		if len(got.Spec.Template.Spec.Tolerations) != 0 {
+			t.Errorf("Tolerations = %v, want none", got.Spec.Template.Spec.Tolerations)
+		}
+	})
+
 	t.Run("ControllerRefError", func(t *testing.T) {
 		emptyScheme := runtime.NewScheme()
-		_, err := BuildMultiadminDeployment(cluster, spec, emptyScheme)
+		_, err := BuildMultiadminDeployment(cluster, spec, nil, emptyScheme)
 		if err == nil {
 			t.Error("Expected error due to missing scheme types, got nil")
 		}

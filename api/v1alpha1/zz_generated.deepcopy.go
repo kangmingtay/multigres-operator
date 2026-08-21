@@ -532,6 +532,11 @@ func (in *CoreTemplateSpec) DeepCopyInto(out *CoreTemplateSpec) {
 		*out = new(StatelessSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.MultiadminPlacement != nil {
+		in, out := &in.MultiadminPlacement, &out.MultiadminPlacement
+		*out = new(PodPlacementSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.MultiadminWeb != nil {
 		in, out := &in.MultiadminWeb, &out.MultiadminWeb
 		*out = new(StatelessSpec)
@@ -864,6 +869,11 @@ func (in *MultiadminConfig) DeepCopyInto(out *MultiadminConfig) {
 	if in.Spec != nil {
 		in, out := &in.Spec, &out.Spec
 		*out = new(StatelessSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Placement != nil {
+		in, out := &in.Placement, &out.Placement
+		*out = new(PodPlacementSpec)
 		(*in).DeepCopyInto(*out)
 	}
 }

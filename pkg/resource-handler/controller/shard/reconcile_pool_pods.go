@@ -346,6 +346,50 @@ func isPoolHealthy(
 	return true
 }
 
+// isShardHealthy reports whether every pool pod across the whole shard — not
+// just the pool/cell currently being reconciled — is Ready, with none
+// draining or terminating
+func (r *ShardReconciler) isShardHealthy(
+	ctx context.Context,
+	shard *multigresv1alpha1.Shard,
+) (bool, error) {
+	lbls := map[string]string{
+		metadata.LabelMultigresCluster:    shard.Labels[metadata.LabelMultigresCluster],
+		metadata.LabelMultigresDatabase:   string(shard.Spec.DatabaseName),
+		metadata.LabelMultigresTableGroup: string(shard.Spec.TableGroupName),
+		metadata.LabelMultigresShard:      string(shard.Spec.ShardName),
+		metadata.LabelAppComponent:        PoolComponentName,
+	}
+	podList := &corev1.PodList{}
+	if err := r.List(
+		ctx,
+		podList,
+		client.InNamespace(shard.Namespace),
+		client.MatchingLabels(lbls),
+	); err != nil {
+		return false, fmt.Errorf("listing pool pods for shard health check: %w", err)
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		// DRAINED and QUARANTINED pods are expected to be unhealthy and must
+		// not block other pods from rolling.
+		if role := resolvePodRole(shard, pod.Name); role == "DRAINED" || role == "QUARANTINED" {
+			continue
+		}
+		if !pod.DeletionTimestamp.IsZero() {
+			return false, nil
+		}
+		if pod.Annotations[metadata.AnnotationDrainState] != "" {
+			return false, nil
+		}
+		if !isPodReady(pod) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // handleExternalDeletion handles a pod that has been deleted externally (e.g. kubectl delete).
 // Unscheduled pods are allowed to terminate; scheduled pods enter the drain state machine.
 func (r *ShardReconciler) handleExternalDeletion(
@@ -552,6 +596,14 @@ func (r *ShardReconciler) handleRollingUpdates(
 	}
 
 	if actionTaken || isAnyPodDraining || driftedCount == 0 {
+		return nil
+	}
+
+	// Refuse to start a new drain if some other pool/cell in this shard is
+	// already mid-rollout or has not yet come back Ready.
+	if healthy, err := r.isShardHealthy(ctx, shard); err != nil {
+		return err
+	} else if !healthy {
 		return nil
 	}
 

@@ -32,6 +32,7 @@ func (r *ShardReconciler) reconcilePoolPods(
 	poolName string,
 	cellName string,
 	poolSpec multigresv1alpha1.PoolSpec,
+	rollout *shardRolloutTracker,
 ) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("reconcilePoolPods started", "pool", poolName, "cell", cellName)
@@ -113,6 +114,7 @@ func (r *ShardReconciler) reconcilePoolPods(
 		driftedCount,
 		actionTaken,
 		inProgress,
+		rollout,
 	); err != nil {
 		return err
 	}
@@ -554,6 +556,22 @@ func (r *ShardReconciler) handleScaleDown(
 	return actionTaken, inProgress, nil
 }
 
+// shardRolloutTracker records, within a single Shard reconcile pass, whether
+// any pool has already initiated a drain. handleRollingUpdates checks this
+// before starting a new one so that a pool reconciled later in the same pass
+// doesn't rely on isShardHealthy's cached read having caught up
+type shardRolloutTracker struct {
+	started bool
+}
+
+func (t *shardRolloutTracker) HasStarted() bool {
+	return t.started
+}
+
+func (t *shardRolloutTracker) SetStarted() {
+	t.started = true
+}
+
 // handleRollingUpdates drains drifted pods one at a time (replicas first, primary last).
 func (r *ShardReconciler) handleRollingUpdates(
 	ctx context.Context,
@@ -563,6 +581,7 @@ func (r *ShardReconciler) handleRollingUpdates(
 	existingPods map[string]*corev1.Pod,
 	driftedCount int,
 	actionTaken, isAnyPodDraining bool,
+	rollout *shardRolloutTracker,
 ) error {
 	logger := log.FromContext(ctx)
 
@@ -599,8 +618,19 @@ func (r *ShardReconciler) handleRollingUpdates(
 		return nil
 	}
 
-	// Refuse to start a new drain if some other pool/cell in this shard is
-	// already mid-rollout or has not yet come back Ready.
+	// Prevent a new drain if some other pool in this shard already
+	// started one earlier in this same reconcile pass. Checked before
+	// isShardHealthy because that check reads through the controller cache,
+	// which may not yet reflect a drain another pool just initiated moments
+	// ago in this same pass.
+	if rollout.HasStarted() {
+		return nil
+	}
+
+	// Prevent a new drain if some other pool/cell in this shard is
+	// already mid-rollout or has not yet come back Ready (from an earlier
+	// reconcile pass — real wall-clock time since then means the cache has
+	// had time to catch up).
 	if healthy, err := r.isShardHealthy(ctx, shard); err != nil {
 		return err
 	} else if !healthy {
@@ -635,6 +665,7 @@ func (r *ShardReconciler) handleRollingUpdates(
 			if err := r.initiateDrain(ctx, pod); err != nil {
 				return fmt.Errorf("failed to initiate drain for drifted pod %s: %w", pod.Name, err)
 			}
+			rollout.SetStarted()
 			logger.Info(
 				"Initiated drain for drifted replica pod during rolling update",
 				"pod",
@@ -661,6 +692,7 @@ func (r *ShardReconciler) handleRollingUpdates(
 				err,
 			)
 		}
+		rollout.SetStarted()
 		logger.Info("Requested switchover for primary pod rolling update", "pod", waitPrimary.Name)
 		r.Recorder.Eventf(
 			shard,

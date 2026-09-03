@@ -1688,7 +1688,7 @@ func TestScaleDown_ExternallyDeletedExtraPod(t *testing.T) {
 	}
 
 	// 1. Run reconcile loop
-	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec)
+	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec, &shardRolloutTracker{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2030,7 +2030,7 @@ func TestRollingUpdateOrder(t *testing.T) {
 	}
 
 	// Run reconcile loop
-	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec)
+	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec, &shardRolloutTracker{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2152,6 +2152,7 @@ func TestRollingUpdateWaitsForSiblingCell(t *testing.T) {
 		"pool-2",
 		"zone2",
 		poolSpec,
+		&shardRolloutTracker{},
 	); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2237,7 +2238,7 @@ func TestDrainedPodReplacement(t *testing.T) {
 	}
 
 	// Run reconcile loop
-	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec)
+	err := r.reconcilePoolPods(context.Background(), shardObj, "primary", "zone1", poolSpec, &shardRolloutTracker{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

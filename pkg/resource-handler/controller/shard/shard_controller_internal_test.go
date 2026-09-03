@@ -3284,7 +3284,9 @@ func TestHandleRollingUpdates_RolloutTrackerBlocksSameShardPass(t *testing.T) {
 		t.Fatalf("failed to get pod: %v", err)
 	}
 	if updated.Annotations[metadata.AnnotationDrainState] != "" {
-		t.Error("drain annotation should not be set when the rollout tracker already started this pass")
+		t.Error(
+			"drain annotation should not be set when the rollout tracker already started this pass",
+		)
 	}
 }
 
@@ -3624,7 +3626,14 @@ func TestReconcilePoolPods_ErrorPaths(t *testing.T) {
 		})
 		r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
 
-		err := r.reconcilePoolPods(context.Background(), shard, "primary", "zone1", poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			context.Background(),
+			shard,
+			"primary",
+			"zone1",
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil {
 			t.Error("expected error on pod list failure")
 		}
@@ -3643,7 +3652,14 @@ func TestReconcilePoolPods_ErrorPaths(t *testing.T) {
 		})
 		r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
 
-		err := r.reconcilePoolPods(context.Background(), shard, "primary", "zone1", poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			context.Background(),
+			shard,
+			"primary",
+			"zone1",
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil {
 			t.Error("expected error on PVC list failure")
 		}
@@ -3961,7 +3977,14 @@ func TestReconcilePoolPods_ErrorPropagation(t *testing.T) {
 			},
 		})
 		r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
-		err := r.reconcilePoolPods(t.Context(), shard, poolName, cellName, poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			t.Context(),
+			shard,
+			poolName,
+			cellName,
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil {
 			t.Fatal("expected error from createMissingResources")
 		}
@@ -4021,7 +4044,14 @@ func TestReconcilePoolPods_ErrorPropagation(t *testing.T) {
 			},
 		})
 		r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
-		err := r.reconcilePoolPods(t.Context(), shard, poolName, cellName, poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			t.Context(),
+			shard,
+			poolName,
+			cellName,
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil {
 			t.Fatal("expected error from handleScaleDown")
 		}
@@ -4062,7 +4092,14 @@ func TestReconcilePoolPods_ErrorPropagation(t *testing.T) {
 			},
 		})
 		r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
-		err := r.reconcilePoolPods(t.Context(), shard, poolName, cellName, poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			t.Context(),
+			shard,
+			poolName,
+			cellName,
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil {
 			t.Fatal("expected error from handleRollingUpdates")
 		}
@@ -5934,7 +5971,14 @@ func TestReconcilePoolPods_AdditionalErrorPaths(t *testing.T) {
 		})
 
 		r := &ShardReconciler{Client: fails, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
-		err := r.reconcilePoolPods(context.Background(), shard, "main", "z1", poolSpec, &shardRolloutTracker{})
+		err := r.reconcilePoolPods(
+			context.Background(),
+			shard,
+			"main",
+			"z1",
+			poolSpec,
+			&shardRolloutTracker{},
+		)
 		if err == nil || !strings.Contains(err.Error(), "failed to create PVC") {
 			t.Fatalf("expected PVC creation error, got %v", err)
 		}

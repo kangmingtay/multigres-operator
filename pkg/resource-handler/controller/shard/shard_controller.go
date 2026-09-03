@@ -449,7 +449,14 @@ func (r *ShardReconciler) reconcilePool(
 		cellName := string(cell)
 
 		// Reconcile pool Pods and PVCs for this cell
-		if err := r.reconcilePoolPods(ctx, shard, poolName, cellName, poolSpec, rollout); err != nil {
+		if err := r.reconcilePoolPods(
+			ctx,
+			shard,
+			poolName,
+			cellName,
+			poolSpec,
+			rollout,
+		); err != nil {
 			return fmt.Errorf("failed to reconcile pool pods for cell %s: %w", cellName, err)
 		}
 

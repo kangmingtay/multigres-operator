@@ -318,28 +318,39 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-// isPoolHealthy returns true if all non-draining, non-terminating, non-DRAINED
-// pods that will remain after scale-down are Ready. Extra pods (index >=
-// effectiveReplicas) are excluded so an unhealthy extra pod does not block its
-// own removal. DRAINED pods are excluded because they are expected to be
-// unhealthy and should not block scale-down of stand-in pods.
+// isPoolHealthy returns true if the pool/cell has at least effectiveReplicas
+// pods, and all of them — except extras (index >= effectiveReplicas) and
+// DRAINED/QUARANTINED pods — are Ready, with none draining or terminating.
+// Extra pods are excluded so an unhealthy extra pod does not block its own
+// removal. DRAINED and QUARANTINED pods are excluded because they are
+// expected to be unhealthy and should not block scale-down of stand-in pods.
+//
+// The count check matters because a pod drained all the way to deletion
+// disappears from existingPods entirely — there is nothing left for the
+// per-pod checks below to flag as unhealthy. Without it, a pool/cell sitting
+// at zero pods for a slot (deleted, replacement not yet created) would look
+// indistinguishable from a pool that was never touched.
 func isPoolHealthy(
 	existingPods map[string]*corev1.Pod,
 	effectiveReplicas int32,
 	shard *multigresv1alpha1.Shard,
 ) bool {
+	//nolint:gosec // pod count will never exceed int32 capacity
+	if int32(len(existingPods)) < effectiveReplicas {
+		return false
+	}
 	for _, pod := range existingPods {
-		if pod.Annotations[metadata.AnnotationDrainState] != "" || !pod.DeletionTimestamp.IsZero() {
-			continue
-		}
 		if idx, ok := resolvePodIndex(pod.Name); !ok || idx >= int(effectiveReplicas) {
 			continue
 		}
-		// DRAINED and QUARANTINED pods are expected to be unhealthy (the latter is
-		// being replaced by quarantine remediation); they must not block
-		// scale-down of other pods.
 		if role := resolvePodRole(shard, pod.Name); role == "DRAINED" || role == "QUARANTINED" {
 			continue
+		}
+		if !pod.DeletionTimestamp.IsZero() {
+			return false
+		}
+		if pod.Annotations[metadata.AnnotationDrainState] != "" {
+			return false
 		}
 		if !isPodReady(pod) {
 			return false
@@ -348,9 +359,8 @@ func isPoolHealthy(
 	return true
 }
 
-// isShardHealthy reports whether every pool pod across the whole shard — not
-// just the pool/cell currently being reconciled — is Ready, with none
-// draining or terminating
+// isShardHealthy reports whether every declared pool/cell across the whole
+// shard is healthy per isPoolHealthy
 func (r *ShardReconciler) isShardHealthy(
 	ctx context.Context,
 	shard *multigresv1alpha1.Shard,
@@ -372,23 +382,31 @@ func (r *ShardReconciler) isShardHealthy(
 		return false, fmt.Errorf("listing pool pods for shard health check: %w", err)
 	}
 
+	// Group every pod by pool/cell
+	podsByPoolCell := make(map[string]map[string]*corev1.Pod, len(shard.Spec.Pools))
 	for i := range podList.Items {
 		pod := &podList.Items[i]
-		// DRAINED and QUARANTINED pods are expected to be unhealthy and must
-		// not block other pods from rolling.
-		if role := resolvePodRole(shard, pod.Name); role == "DRAINED" || role == "QUARANTINED" {
-			continue
+		key := pod.Labels[metadata.LabelMultigresPool] + "/" + pod.Labels[metadata.LabelMultigresCell]
+		if podsByPoolCell[key] == nil {
+			podsByPoolCell[key] = map[string]*corev1.Pod{}
 		}
-		if !pod.DeletionTimestamp.IsZero() {
-			return false, nil
-		}
-		if pod.Annotations[metadata.AnnotationDrainState] != "" {
-			return false, nil
-		}
-		if !isPodReady(pod) {
-			return false, nil
+		podsByPoolCell[key][pod.Name] = pod
+	}
+
+	for poolName, pool := range shard.Spec.Pools {
+		for _, cell := range pool.Cells {
+			replicas := DefaultPoolReplicas
+			if pool.ReplicasPerCell != nil {
+				replicas = *pool.ReplicasPerCell
+			}
+			group := podsByPoolCell[string(poolName)+"/"+string(cell)]
+			effectiveReplicas := replicas + countDrainedPods(shard, group)
+			if !isPoolHealthy(group, effectiveReplicas, shard) {
+				return false, nil
+			}
 		}
 	}
+
 	return true, nil
 }
 

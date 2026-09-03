@@ -2665,13 +2665,19 @@ func TestIsPoolHealthy(t *testing.T) {
 		},
 	}
 
-	t.Run("empty pool is healthy", func(t *testing.T) {
-		if !isPoolHealthy(map[string]*corev1.Pod{}, 1, shard) {
-			t.Error("expected empty pool to be healthy")
+	t.Run("empty pool is unhealthy when replicas are expected", func(t *testing.T) {
+		if isPoolHealthy(map[string]*corev1.Pod{}, 1, shard) {
+			t.Error("expected empty pool with 1 expected replica to be unhealthy")
 		}
 	})
 
-	t.Run("draining pod is excluded from health check", func(t *testing.T) {
+	t.Run("empty pool is healthy when no replicas are expected", func(t *testing.T) {
+		if !isPoolHealthy(map[string]*corev1.Pod{}, 0, shard) {
+			t.Error("expected empty pool with 0 expected replicas to be healthy")
+		}
+	})
+
+	t.Run("draining pod makes pool unhealthy", func(t *testing.T) {
 		pods := map[string]*corev1.Pod{
 			"pod-0": {
 				ObjectMeta: metav1.ObjectMeta{
@@ -2687,12 +2693,12 @@ func TestIsPoolHealthy(t *testing.T) {
 				},
 			},
 		}
-		if !isPoolHealthy(pods, 1, shard) {
-			t.Error("draining pod should be excluded from health check")
+		if isPoolHealthy(pods, 1, shard) {
+			t.Error("draining pod should make the pool unhealthy")
 		}
 	})
 
-	t.Run("pod being deleted is excluded from health check", func(t *testing.T) {
+	t.Run("pod being deleted makes pool unhealthy", func(t *testing.T) {
 		now := metav1.Now()
 		pods := map[string]*corev1.Pod{
 			"pod-0": {
@@ -2708,8 +2714,8 @@ func TestIsPoolHealthy(t *testing.T) {
 				},
 			},
 		}
-		if !isPoolHealthy(pods, 1, shard) {
-			t.Error("terminating pod should be excluded from health check")
+		if isPoolHealthy(pods, 1, shard) {
+			t.Error("terminating pod should make the pool unhealthy")
 		}
 	})
 
@@ -3286,6 +3292,77 @@ func TestHandleRollingUpdates_RolloutTrackerBlocksSameShardPass(t *testing.T) {
 	if updated.Annotations[metadata.AnnotationDrainState] != "" {
 		t.Error(
 			"drain annotation should not be set when the rollout tracker already started this pass",
+		)
+	}
+}
+
+// TestIsShardHealthy_MissingPodCountsAsUnhealthy verifies that a pool/cell
+// with fewer pods than its declared ReplicasPerCell is treated as unhealthy,
+// even though every pod that does exist is Ready. A pod drained all the way
+// to deletion disappears from the pod list entirely — there is nothing left
+// for a per-pod check to flag — so isShardHealthy must also compare pod
+// counts against shard.Spec.Pools, not just judge the pods it happens to
+// find.
+func TestIsShardHealthy_MissingPodCountsAsUnhealthy(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = multigresv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	shard := &multigresv1alpha1.Shard{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-shard",
+			Namespace: "default",
+			Labels:    map[string]string{metadata.LabelMultigresCluster: "test-cluster"},
+		},
+		Spec: multigresv1alpha1.ShardSpec{
+			DatabaseName:   "db",
+			TableGroupName: "tg",
+			ShardName:      "s1",
+			Pools: map[multigresv1alpha1.PoolName]multigresv1alpha1.PoolSpec{
+				// pool-1/zone1 is declared but has no pod at all — as if its
+				// only replica was drained all the way to deletion and the
+				// replacement hasn't been created yet.
+				"pool-1": {
+					ReplicasPerCell: ptr.To(int32(1)),
+					Cells:           []multigresv1alpha1.CellName{"zone1"},
+				},
+				"pool-2": {
+					ReplicasPerCell: ptr.To(int32(1)),
+					Cells:           []multigresv1alpha1.CellName{"zone2"},
+				},
+			},
+		},
+	}
+
+	healthyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      BuildPoolPodName(shard, "pool-2", "zone2", 0),
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/component":  "shard-pool",
+				metadata.LabelMultigresCluster: "test-cluster",
+				metadata.LabelMultigresPool:    "pool-2",
+				metadata.LabelMultigresCell:    "zone2",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(shard, healthyPod).Build()
+	r := &ShardReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(10)}
+
+	healthy, err := r.isShardHealthy(context.Background(), shard)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if healthy {
+		t.Error(
+			"isShardHealthy should be false when pool-1/zone1 has no pod at all, " +
+				"even though the only pod that exists (pool-2/zone2) is Ready",
 		)
 	}
 }

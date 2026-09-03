@@ -2102,6 +2102,16 @@ func TestRollingUpdateWaitsForSiblingCell(t *testing.T) {
 			DatabaseName:   "db",
 			TableGroupName: "tg",
 			ShardName:      "s1",
+			Pools: map[multigresv1alpha1.PoolName]multigresv1alpha1.PoolSpec{
+				"pool-1": {
+					ReplicasPerCell: ptr.To(int32(1)),
+					Cells:           []multigresv1alpha1.CellName{"zone1"},
+				},
+				"pool-2": {
+					ReplicasPerCell: ptr.To(int32(1)),
+					Cells:           []multigresv1alpha1.CellName{"zone2"},
+				},
+			},
 		},
 	}
 
